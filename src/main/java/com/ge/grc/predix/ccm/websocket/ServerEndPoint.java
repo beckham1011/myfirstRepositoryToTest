@@ -1,0 +1,283 @@
+package com.ge.grc.predix.ccm.websocket;
+
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+
+import javax.websocket.CloseReason;
+import javax.websocket.EndpointConfig;
+import javax.websocket.OnClose;
+import javax.websocket.OnError;
+import javax.websocket.OnMessage;
+import javax.websocket.OnOpen;
+import javax.websocket.RemoteEndpoint.Basic;
+import javax.websocket.Session;
+import javax.websocket.server.PathParam;
+import javax.websocket.server.ServerEndpoint;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Component;
+
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+
+@Component
+@ServerEndpoint(value = "/livestream/{nodeId}")
+public class ServerEndPoint {
+	//socket client key : 62608e08adc29a8d6dbc9754e659f125
+	private int cellCount = 4;
+	private Session session;
+	private static int count= 0;
+	private  Logger _logger = LoggerFactory.getLogger(ServerEndPoint.class);
+	
+	private static ArrayList<Date[]> allDate = new ArrayList<Date[]>();
+	private static ArrayList<Date[]> stopDate = new ArrayList<Date[]>();
+	private static ArrayList<double[]> allWeight = new ArrayList<double[]>();
+	private static ArrayList<String[]> allUnit = new ArrayList<String[]>();
+	private static ArrayList<String[]> allHooper = new ArrayList<String[]>();
+	private static ArrayList<long[]> startTime=new ArrayList<long[]>();
+	private static ArrayList<long[]> stopTime=new ArrayList<long[]>();
+	private static ArrayList<String[]> alarmMsg=new ArrayList<String[]>();
+	private static ArrayList<String[]> robotRate=new ArrayList<String[]>();
+	
+	private static Map<String, Session> sessionPool = new ConcurrentHashMap<String, Session>();
+	
+	@OnOpen
+	public void onOpen(@PathParam(value = "nodeId") String nodeId, final Session session1, EndpointConfig ec)
+			throws InterruptedException, IOException {
+		sessionPool.put(session1.getId(), session1);
+		session = (Session) sessionPool.get(session1.getId());
+		String sessionNode = session.getRequestURI().toString().split("/")[2];
+		String unit = "unit";
+		_logger.info("session CONNECTED: SessionID: " + session.getId());
+		_logger.info("sessionNode CONNECTED: "+sessionNode);
+		count=count+1;
+		_logger.info("connected number : "+count);
+		if(allWeight.size()==0){
+			for(int i=0;i<cellCount;i++){
+				allWeight.add(new double[]{0,0,0});
+				allDate.add(new Date[]{new Date(),new Date(),new Date()});
+				allUnit.add(new String[]{ "", "", "" });
+				allHooper.add(new String[]{ "0", "0", "0" });
+				stopDate.add(new Date[]{new Date(),new Date(),new Date()});
+				stopTime.add(new long[]{new Date().getTime(),new Date().getTime(),new Date().getTime()});
+				startTime.add(new long[]{0,0,0});
+				alarmMsg.add(new String[]{"","",""});
+				robotRate.add(new String[]{""});
+			}
+		}
+		
+		
+		for (int i = 1; i <= cellCount; i++) {
+			if(!sessionNode.equals("client")&&!sessionNode.equals("62608e08adc29a8d6dbc9754e659f125")){
+				if (Integer.parseInt(sessionNode) == i) {
+					unit = unit + ":" + allUnit.get(i - 1)[0] + ":" + allUnit.get(i - 1)[1] + ":" + allUnit.get(i - 1)[2];
+					String sendWeight = ServerTools.clearWeight(allWeight.get(i - 1));
+					String Msg = ServerTools.BuildClearMsg(allDate.get(i - 1),allHooper.get(i-1),stopDate.get(i-1),startTime.get(i-1),stopTime.get(i-1));
+					String alarmStr=ServerTools.BuildAlarm(alarmMsg.get(i-1));
+					String robotStr=ServerTools.BuildRobot(robotRate.get(i-1));
+					Basic currentSession = session.getBasicRemote();
+					synchronized(currentSession){
+						currentSession.sendText(sendWeight + ":" + unit);
+						currentSession.sendText(Msg);
+						currentSession.sendText(alarmStr);
+						currentSession.sendText(robotStr);
+					}
+				}
+			}
+		}
+
+	}
+
+	public void resetMsg( int i , int powderId ){
+		allDate.get(i)[1] = new Date();
+		stopDate.get(i)[1] = new Date();
+		allWeight.get(i)[1] = 0;
+		stopTime.get(i)[1]=new Date().getTime();
+		startTime.get(i)[1]=0;
+		String Msg = ServerTools.BuildClearMsgForReset(allDate.get(i),allHooper.get(i),stopDate.get(i),powderId);
+		String sendWeight = ServerTools.clearWeight(allWeight.get(i));
+		try {
+			Basic currentSession = session.getBasicRemote();
+			synchronized(currentSession){
+				currentSession.sendText(Msg);
+				currentSession.sendText(sendWeight + ":unit" + ":" + allUnit.get(i)[0] + ":"+ allUnit.get(i)[1] + ":" + allUnit.get(i)[2]);
+			}
+		} catch (IOException e) {
+			_logger.info(e.getMessage());
+		}
+	}
+	
+	
+	@OnMessage
+	public void OnMessage(String message, Session session1)  {
+			
+		session = (Session) sessionPool.get(session1.getId());
+		String clientSession = session.getRequestURI().toString().split("/")[2];
+		System.out.println(cellCount);
+		if (message.indexOf("reset") != -1) {
+			for (int i = 0; i < cellCount; i++) {
+				if (Integer.parseInt(clientSession) == (i + 1)) {
+					if (message.equals("reset1")) {
+						resetMsg(i,1) ;
+					}
+					if (message.equals("reset2")) {
+						resetMsg(i,2) ;
+					}
+					if (message.equals("reset3")) {
+						resetMsg(i,3) ;
+					}
+				}
+			}
+		} else if (message.contains("alarm")||message.contains("rateOfUser")||message.contains("eqpt")) {
+			ArrayList<String> markNodes=new ArrayList<String>();
+			int cellId = ServerTools.getCellIdFromEquipmentCode(message);
+			for (Session s : session.getOpenSessions()) {
+				String sessionNode = s.getRequestURI().toString().split("/")[2];
+				if (!sessionNode.equals("client")&&!sessionNode.equals("62608e08adc29a8d6dbc9754e659f125")) {
+					if (Integer.parseInt(sessionNode) == cellId) {
+						JsonParser parser = new JsonParser();
+						JsonObject o = (JsonObject) parser.parse(message);
+						int feederId =Integer.parseInt(o.get("equipmentCode").getAsString().substring(3,5));
+						if(message.contains("alarm")||message.contains("eqpt")){
+							if(feederId>=3&&feederId<=5){
+								String status=o.get("value").getAsInt()+"";
+								if(allHooper.get(cellId-1)[feederId-3].equals(status)){
+									continue;
+								}else{
+									if(Integer.parseInt(status)==0&&message.contains("eqpt")&&!markNodes.contains(sessionNode)&&!allHooper.get(cellId-1)[feederId-3].equals(status)){
+										startTime.get(cellId-1)[feederId-3]=new Date().getTime()-allDate.get(cellId-1)[feederId-3].getTime()+startTime.get(cellId-1)[feederId-3];
+										stopDate.get(cellId-1)[feederId-3]=new Date();
+										allHooper.get(cellId-1)[feederId-3]=status;
+									}else if((Integer.parseInt(status)==1||Integer.parseInt(status)==2)&&message.contains("eqpt")&&!markNodes.contains(sessionNode)&&!allHooper.get(cellId-1)[feederId-3].equals(status)){
+										stopTime.get(cellId-1)[feederId-3]=new Date().getTime()-stopDate.get(cellId-1)[feederId-3].getTime()+stopTime.get(cellId-1)[feederId-3];
+										allDate.get(cellId-1)[feederId-3]=new Date();
+										allHooper.get(cellId-1)[feederId-3]=status;
+									}
+								}
+							}
+						}
+						
+						if(message.contains("alarm")){
+							if(feederId>=3&&feederId<=5){
+								if(o.get("value").getAsInt()==1){
+									alarmMsg.get(cellId-1)[feederId-3]=o.get("message").getAsString();
+								}else if(o.get("value").getAsInt()==0){
+									alarmMsg.get(cellId-1)[feederId-3]="";
+								}
+							}
+						}
+						
+						if(message.contains("rateOfUser")){
+							if(o.get("equipmentCode").getAsString().substring(3,5).equals("02")){
+								robotRate.get(cellId-1)[0]=o.get("rateOfUser").getAsString();
+							}
+						}
+						
+						try {
+							String alarmStr=ServerTools.BuildAlarm(alarmMsg.get(cellId-1));
+							Basic currentSession = s.getBasicRemote();
+							synchronized(currentSession){
+								currentSession.sendText(message);
+								currentSession.sendText(alarmStr);
+							}
+						} catch (IOException e) {
+							_logger.info(e.getMessage());
+						}
+					}
+				}
+				markNodes.add(sessionNode);
+			}
+			
+		} else if(message.contains("cellCode") && clientSession.equals("62608e08adc29a8d6dbc9754e659f125")) {
+			JsonArray nodes = ServerTools.getJsonNode("cells", message);
+			ArrayList<String> markNodes=new ArrayList<String>();
+			
+			for (Session s : sessionPool.values()) {
+				
+				String sessionNode = s.getRequestURI().toString().split("/")[2];
+				
+				for (int i = 0; i < nodes.size(); i++) {
+
+					JsonObject node = (JsonObject) nodes.get(i);
+					String nodeUri = node.get("cellCode").getAsString();
+					JsonElement equipments = node.get("equipments");
+					if ( !sessionNode.equals("client") && !sessionNode.equals("62608e08adc29a8d6dbc9754e659f125")) {
+						if (Integer.parseInt(sessionNode) == Integer.parseInt(nodeUri)) {
+							JsonArray jsonStr = equipments.getAsJsonArray();
+							String sendWeight = "allWeight";
+							String unit = "unit";
+							for (int z = 0; z < jsonStr.size(); z++) {
+								JsonObject equipment = (JsonObject) jsonStr.get(z);
+								int feederId =Integer.parseInt(equipment.get("equipmentCode").getAsString().substring(3,5));
+								if(feederId>=3&&feederId<=5){
+									String deltaWeight = equipment.get("deltaWeight").getAsString();
+									double equipt = deltaWeight.equals("")||deltaWeight==null?0:Double.parseDouble(deltaWeight);
+									allUnit.get(i)[feederId-3] = equipment.get("weightUnit").getAsString();
+									String unitC=equipment.get("weightUnit").getAsString()==null||equipment.get("weightUnit").getAsString().equals("")?"":equipment.get("weightUnit").getAsString();
+									String singleUnit=unitC;
+									if (singleUnit.equals("kg")) {
+										equipt = equipt / 0.45359;
+									}
+									if(!markNodes.contains(sessionNode)){
+										allWeight.get(i)[feederId-3] = allWeight.get(i)[feederId-3] + equipt;
+									}
+								}
+							}
+							
+							for(int w=0;w<allWeight.get(i).length;w++){
+								unit = unit + ":" + allUnit.get(i)[w] ;
+								sendWeight = sendWeight + ":" + allWeight.get(i)[w];
+							}
+							
+							try {
+								Basic currentSession = s.getBasicRemote();
+								synchronized(currentSession) {
+									currentSession.sendText(sendWeight + ":" + unit);
+									currentSession.sendText(equipments.toString());
+							    }
+							} catch (IOException e) {
+								// TODO Auto-generated catch block
+								_logger.info("sessionNode:"+sessionNode+" error configure Json :"+e.getMessage());
+							}
+							markNodes.add(sessionNode);
+						}
+					}
+				}
+				if (sessionNode.equals("62608e08adc29a8d6dbc9754e659f125")) {
+					try {
+						Basic currentSession = s.getBasicRemote();
+						synchronized(currentSession ) {
+							currentSession .sendText("{'message':'true'}");
+						}
+					} catch (IOException e) {
+						_logger.info(e.getMessage());
+					}
+				}
+			}
+		}
+	}
+
+	@OnClose
+	public void onClose(Session session, CloseReason closeReason) {
+		sessionPool.remove(session.getId());
+		String sessionNode = session.getRequestURI().toString().split("/")[2];
+		count=count-1;
+		_logger.info("Server: SessionID: " + session.getId() + " closed because of " + closeReason); 
+		_logger.info("Server: SessionNode: " + sessionNode + " closed because of " + closeReason); 
+		_logger.info("connected number : "+count);
+	}
+
+	@OnError
+	public void onError(Session session, Throwable t) {
+		
+		_logger.info("ServerError: SessionID " + session.getId() + " closed because of " + t.getMessage()); 
+		String sessionNode = session.getRequestURI().toString().split("/")[2];
+		_logger.info("Server: SessionNode: " + sessionNode + " closed because of " + t.getMessage()); 
+	}
+}

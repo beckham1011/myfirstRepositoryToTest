@@ -1,0 +1,171 @@
+package com.ge.grc.predix.ccm.websocket;
+
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.concurrent.CopyOnWriteArraySet;
+
+import javax.websocket.CloseReason;
+import javax.websocket.EndpointConfig;
+import javax.websocket.OnClose;
+import javax.websocket.OnError;
+import javax.websocket.OnMessage;
+import javax.websocket.OnOpen;
+import javax.websocket.Session;
+import javax.websocket.server.PathParam;
+import javax.websocket.server.ServerEndpoint;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Component;
+
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+
+@Component
+@ServerEndpoint(value = "/livestream/{nodeId}")
+public class ServerEndPoint {
+	private static String weightUnit;
+	private static JsonArray JSONALL;
+	private int cellCount = 4;
+	private String nodeId;
+	private  Session session;
+	private static Logger _logger = LoggerFactory.getLogger(ServerEndPoint.class);
+	private static Date[] oldDate1={new Date(),new Date(),new Date()};
+	private static Date[] oldDate2={new Date(),new Date(),new Date()};
+	private static Date[] oldDate3={new Date(),new Date(),new Date()};
+	private static Date[] oldDate4={new Date(),new Date(),new Date()};
+	private static ArrayList<Date[]> allDate=new ArrayList<Date[]>();
+	private static double[] allWeight1={0,0,0};
+	private static double[] allWeight2={0,0,0};
+	private static double[] allWeight3={0,0,0};
+	private static double[] allWeight4={0,0,0};
+	private static ArrayList<double[]> allWeight=new ArrayList<double[]>();
+	
+	private static String[] allUnit1={"","",""};
+	private static String[] allUnit2={"","",""};
+	private static String[] allUnit3={"","",""};
+	private static String[] allUnit4={"","",""};
+	private static ArrayList<String[]> allUnit=new ArrayList<String[]>();
+	@OnOpen
+	public void onOpen(@PathParam(value = "nodeId") String nodeId, final Session session, EndpointConfig ec) throws InterruptedException, IOException {
+        allWeight.clear();
+		allWeight.add(allWeight1);
+		allWeight.add(allWeight2);
+		allWeight.add(allWeight3);
+		allWeight.add(allWeight4);
+		
+		 allDate.clear();
+		 allDate.add(oldDate1);
+		 allDate.add(oldDate2);
+		 allDate.add(oldDate3);
+		 allDate.add(oldDate4);
+		 
+		 allUnit.clear();
+		 allUnit.add(allUnit1);
+		 allUnit.add(allUnit2);
+		 allUnit.add(allUnit3);
+		 allUnit.add(allUnit4);
+		this.nodeId = nodeId;
+		String sessionNode = session.getRequestURI().toString().split("/")[2];
+		String unit = "unit";
+		for(int i=1;i<=cellCount;i++){
+			if(Integer.parseInt(sessionNode)==i){
+				unit=unit+":"+allUnit.get(i-1)[0]+":"+allUnit.get(i-1)[1]+":"+allUnit.get(i-1)[2];
+				String sendWeight=ServerTools.clearWeight(allWeight.get(i-1));
+				session.getBasicRemote().sendText(sendWeight+":"+unit);
+				String Msg=ServerTools.BuildClearMsg(allDate.get(i-1));
+				session.getBasicRemote().sendText(Msg);
+			}
+		}
+		
+				
+	}
+	@OnMessage
+	public void OnMessage(String message, Session session) throws IOException {
+		_logger.info("Message : " + message);
+		if(message.indexOf("reset")!=-1){
+					for(int i=0;i<cellCount;i++){
+						if(Integer.parseInt(session.getRequestURI().toString().split("/")[2])==(i+1)){
+							if(message.equals("reset1")){
+								allDate.get(i)[0]=new Date();
+								allWeight.get(i)[0]=0;
+								String Msg=ServerTools.BuildClearMsg(allDate.get(i));
+								session.getBasicRemote().sendText(Msg);
+								String sendWeight=ServerTools.clearWeight(allWeight.get(i));
+								session.getBasicRemote().sendText(sendWeight);
+							}
+							if(message.equals("reset2")){
+								allDate.get(i)[1]=new Date();
+								allWeight.get(i)[1]=0;
+								String Msg=ServerTools.BuildClearMsg(allDate.get(i));
+								session.getBasicRemote().sendText(Msg);
+								String sendWeight=ServerTools.clearWeight(allWeight.get(i));
+								session.getBasicRemote().sendText(sendWeight);
+							}
+							if(message.equals("reset3")){
+								allDate.get(i)[2]=new Date();
+								allWeight.get(i)[2]=0;								
+								String Msg=ServerTools.BuildClearMsg(allDate.get(i));
+								session.getBasicRemote().sendText(Msg);
+								String sendWeight=ServerTools.clearWeight(allWeight.get(i));
+								session.getBasicRemote().sendText(sendWeight);
+							}
+						}
+				}
+		}else{
+			JsonArray nodes =ServerTools.getJsonNode("cells",message);
+			JSONALL=nodes;
+			for (Session s : session.getOpenSessions()) {
+				
+				String sessionNode=s.getRequestURI().toString().split("/")[2];
+				
+				for(int i=0;i<nodes.size();i++){
+					
+					JsonObject node = (JsonObject) nodes.get(i);
+					String nodeUri = node.get("cellCode").getAsString();
+					JsonElement equipments = node.get("equipments");
+					if(!sessionNode.equals("client")){
+						if(Integer.parseInt(sessionNode)==Integer.parseInt(nodeUri)){
+							JsonArray jsonStr=equipments.getAsJsonArray();
+							String sendWeight="allWeight";
+							String unit = "unit";
+							for(int z=2;z<jsonStr.size();z++){
+								JsonObject equipment=(JsonObject) jsonStr.get(z);
+								double equipt=equipment.get("deltaWeight").getAsDouble();
+								allUnit.get(i)[z-2]=equipment.get("weightUnit").getAsString();
+								unit=unit+":"+equipment.get("weightUnit").getAsString();
+								if(unit.equals("kg")){
+									equipt=equipt/0.45359;
+								}
+								allWeight.get(i)[z-2]=allWeight.get(i)[z-2]+equipt;
+								sendWeight=sendWeight+":"+	allWeight.get(i)[z-2];
+							}
+							s.getBasicRemote().sendText(sendWeight+":"+unit);
+							s.getBasicRemote().sendText(equipments.toString());
+						}
+					}
+				}
+				if(sessionNode.equals("client")){
+					s.getBasicRemote().sendText("success");
+				}
+			}
+		}
+	}
+	
+	
+	
+	
+
+	@OnClose
+	public void onClose(Session session, CloseReason closeReason) {
+		_logger.info("Server: Session " + session.getId() + " closed because of " +nodeId); //$NON-NLS-1$ //$NON-NLS-2$
+	}
+
+	@OnError
+	public void onError(Session session, Throwable t) {
+		_logger.info("Server: Session " + session.getId() + " closed because of " + t.getMessage()); //$NON-NLS-1$ //$NON-NLS-2$
+	}
+}

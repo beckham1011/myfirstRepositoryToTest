@@ -1,0 +1,3 @@
+server.port=9191
+logging.config=classpath:logback.xml
+logging.path=/opt/logs/ccm-websocket

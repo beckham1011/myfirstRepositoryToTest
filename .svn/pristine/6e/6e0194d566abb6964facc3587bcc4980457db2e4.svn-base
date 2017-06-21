@@ -1,0 +1,34 @@
+package com.ge.grc.predix.ccm.websocket;
+
+import java.util.Date;
+
+import com.google.gson.JsonArray;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+
+public class ServerTools {
+	
+	public static String BuildClearMsg(Date[] oldDate1){
+		Date currentDate1 = new Date();
+		String Msg="countTime";
+		for(int i=0;i<oldDate1.length;i++){
+			Msg=Msg+":"+(currentDate1.getTime()-oldDate1[i].getTime())/1000;
+		}
+		return Msg;
+	}
+	
+	public static JsonArray getJsonNode(String root,String message){
+		JsonParser parser = new JsonParser();
+		JsonObject o = (JsonObject) parser.parse(message);
+		JsonArray nodes = o.getAsJsonArray(root);
+		return nodes;
+	}
+	
+	public static String clearWeight(double[] allWeight){
+		String sendWeight="allWeight";
+		for(int z=0;z<allWeight.length;z++){
+			sendWeight=sendWeight+":"+	allWeight[z];
+		}
+		return sendWeight;
+	}
+}

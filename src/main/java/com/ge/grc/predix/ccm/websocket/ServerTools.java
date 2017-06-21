@@ -1,0 +1,68 @@
+package com.ge.grc.predix.ccm.websocket;
+
+import java.util.Date;
+
+import com.google.gson.JsonArray;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+
+public class ServerTools {
+	
+	public static String BuildClearMsg(Date[] oldDate,String[] allHooper,Date[] stopDate,long[] startTime,long[] stopTime ){
+		Date currentDate1 = new Date();
+		String Msg="countTime";
+		for(int i=0;i<oldDate.length;i++){
+//			Msg=Msg+":"+(allHooper[i].equals("0")?(startTime[i])/1000:((currentDate1.getTime()-oldDate[i].getTime())/1000));
+			Msg=Msg+":"+(allHooper[i].equals("0")?(startTime[i]/1000):((currentDate1.getTime()-stopTime[i])/1000));
+		}
+		for(int i=0;i<allHooper.length;i++){
+			Msg=Msg+":"+allHooper[i];
+		}
+		return Msg;
+	}
+	
+	public static String BuildAlarm(String[] alarmMsg){
+		String Msg="refreshAlarm";
+		for(int i=0;i<alarmMsg.length;i++){
+			Msg=Msg+":"+alarmMsg[i];
+		}
+		return Msg; 
+	}
+	
+	public static String BuildRobot(String[] robotMsg){
+		String Msg="robotRate";
+		Msg=Msg+":"+robotMsg[0];
+		return Msg;
+	}
+	
+	public static String BuildClearMsgForReset(Date[] oldDate,String[] allHooper,Date[] stopDate,int resetNo ){
+		String Msg="countTime"+resetNo+":0";
+
+		for(int i=0;i<allHooper.length;i++){
+			Msg=Msg+":"+allHooper[i];
+		}
+		return Msg;
+	}
+	public static JsonArray getJsonNode(String root,String message){
+		JsonParser parser = new JsonParser();
+		JsonObject o = (JsonObject) parser.parse(message);
+		JsonArray nodes = o.getAsJsonArray(root);
+		return nodes;
+	}
+	
+	public static String clearWeight(double[] allWeight){
+		String sendWeight="allWeight";
+		for(int z=0;z<allWeight.length;z++){
+			sendWeight=sendWeight+":"+	allWeight[z];
+		}
+		return sendWeight;
+	}
+	
+	public static int getCellIdFromEquipmentCode(String message){
+		JsonParser parser = new JsonParser();
+		JsonObject o = (JsonObject) parser.parse(message);
+		int cellId =Integer.parseInt(o.get("equipmentCode").getAsString().substring(0,3));
+		return cellId;
+    }
+	
+}

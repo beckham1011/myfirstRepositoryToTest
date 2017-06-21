@@ -1,0 +1,6 @@
+server.port=9191
+
+logging.path=/opt/logs/ccm-websocket
+logging.file=ccm-info.log
+logging.level.root=debug
+logging.level.org.springframework=debug

@@ -1,0 +1,90 @@
+package com.ge.grc.predix.ccm.websocket;
+
+import java.io.IOException;
+import java.util.concurrent.CopyOnWriteArraySet;
+
+import javax.websocket.CloseReason;
+import javax.websocket.EndpointConfig;
+import javax.websocket.OnClose;
+import javax.websocket.OnError;
+import javax.websocket.OnMessage;
+import javax.websocket.OnOpen;
+import javax.websocket.Session;
+import javax.websocket.server.PathParam;
+import javax.websocket.server.ServerEndpoint;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Component;
+
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+
+@Component
+@ServerEndpoint(value = "/livestream/{nodeId}")
+public class ServerEndPoint {
+
+	private String nodeId;
+	private static int onlineCount = 0;
+	private static CopyOnWriteArraySet<ServerEndPoint> webSocketSet = new CopyOnWriteArraySet<ServerEndPoint>();
+	private  Session session;
+	private static Logger _logger = LoggerFactory.getLogger(ServerEndPoint.class);
+	
+	@OnOpen
+	public void onOpen(@PathParam(value = "nodeId") String nodeId, final Session session, EndpointConfig ec) throws InterruptedException {
+		this.nodeId = nodeId;
+	}
+	@OnMessage
+	public void OnMessage(String message, Session session) throws IOException {
+		_logger.info("Message : " + message);
+		
+		JsonParser parser = new JsonParser();
+		JsonObject o = (JsonObject) parser.parse(message);
+		JsonArray nodes = o.getAsJsonArray("cells");
+		
+		for (Session s : session.getOpenSessions()) {
+			
+			String sessionNode=s.getRequestURI().toString().split("/")[2];
+			
+			for(int i=0;i<nodes.size();i++){
+				
+				JsonObject node = (JsonObject) nodes.get(i);
+				String nodeUri = node.get("cellCode").getAsString();
+				JsonElement equipments = node.get("equipments");
+				if(!sessionNode.equals("client")){
+					if(Integer.parseInt(sessionNode)==Integer.parseInt(nodeUri)){
+						s.getBasicRemote().sendText(equipments.toString());
+					}
+				}
+			}
+			if(sessionNode.equals("client")){
+				s.getBasicRemote().sendText("success");
+			}
+		}
+	}
+	
+	
+	
+	private JsonObject findJsonObjectByName(JsonArray nodes, String pNodeName) {
+		for (int i = 0; i < nodes.size(); i++) {
+			JsonObject node = (JsonObject) nodes.get(i);
+			String nodeName = node.get("name").getAsString();
+			if (pNodeName.equalsIgnoreCase(nodeName.trim())) {
+				return node;
+			}
+		}
+		return null;
+	}
+
+	@OnClose
+	public void onClose(Session session, CloseReason closeReason) {
+		_logger.info("Server: Session " + session.getId() + " closed because of " + closeReason.toString()); //$NON-NLS-1$ //$NON-NLS-2$
+	}
+
+	@OnError
+	public void onError(Session session, Throwable t) {
+		_logger.info("Server: Session " + session.getId() + " closed because of " + t.getMessage()); //$NON-NLS-1$ //$NON-NLS-2$
+	}
+}

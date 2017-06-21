@@ -1,0 +1,6 @@
+applications:
+- name: huan-ccm-websocket
+  memory: 512M
+  instances: 1
+  timeout: 180
+  path: target/ccm-websocket-server-1.0.0.jar
